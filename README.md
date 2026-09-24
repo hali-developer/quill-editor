@@ -44,7 +44,7 @@ Initialize `RichEditorQ` via JavaScript:
 ```html
 <script>
   document.addEventListener('DOMContentLoaded', () => {
-    const instances = RichEditorQ.init('.my-editor', {
+    RichEditorQ.init('.my-editor', {
       height: 300,
       theme: 'light',
       placeholder: 'Type your content here...',
@@ -52,8 +52,6 @@ Initialize `RichEditorQ` via JavaScript:
         console.log('Live HTML output:', html);
       }
     });
-
-    const editor = instances[0];
   });
 </script>
 ```
