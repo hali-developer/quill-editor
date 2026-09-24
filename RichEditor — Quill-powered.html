@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>RichEditor — Quill-powered</title>
+  <link rel="stylesheet" href="quill.css">
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --heading: #f0f6fc;
+      --accent: #2f81f7;
+      --accent-hover: #58a6ff;
+      --badge-bg: #21262d;
+    }
+
+    [data-theme="light"],
+    body.light-mode {
+      --bg: #f6f8fa;
+      --surface: #ffffff;
+      --border: #d0d7de;
+      --text: #24292f;
+      --heading: #1f2328;
+      --accent: #0969da;
+      --accent-hover: #0349b4;
+      --badge-bg: #eaeeef;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      transition: background 0.25s, color 0.25s;
+    }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 20px 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--heading);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    header .badge {
+      font-size: 12px;
+      padding: 3px 8px;
+      border-radius: 12px;
+      background: var(--badge-bg);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .theme-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 500;
+      font-size: 13px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+
+    .btn:hover {
+      background: var(--badge-bg);
+      border-color: var(--accent);
+      color: var(--heading);
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #ffffff;
+      border-color: var(--accent);
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+      color: #ffffff;
+    }
+
+    main {
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 32px 20px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 32px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .card-title {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--heading);
+    }
+
+    .card-desc {
+      font-size: 13.5px;
+      color: var(--text);
+      opacity: 0.85;
+      margin: 4px 0 0;
+    }
+
+    .output-box {
+      margin-top: 16px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 12.5px;
+      max-height: 140px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .output-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <main>
+
+
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">Instance 2: Full Rich Toolbar &amp; Dark Theme Preset</h2>
+          <p class="card-desc">Initialized with full toolbar enabled, custom height, and preset
+            <code>theme: 'dark'</code>.
+          </p>
+        </div>
+        <div>
+          <button type="button" class="btn" onclick="editor2.setTheme('light')">Light</button>
+          <button type="button" class="btn" onclick="editor2.setTheme('dark')">Dark</button>
+        </div>
+      </div>
+
+      <textarea class="editor-full" name="content_full"
+        data-placeholder="Write rich notes…">&lt;h3&gt;Full Toolbar Feature Demo&lt;/h3&gt;&lt;p&gt;Try adding &lt;strong&gt;formatting&lt;/strong&gt;, lists, code blocks, or click the custom &lt;mark&gt;highlight&lt;/mark&gt; and &lt;code&gt;Source View&lt;/code&gt; buttons!&lt;/p&gt;</textarea>
+
+      <div class="output-label">Live Synced Target Element (.value):</div>
+      <div id="output2" class="output-box"></div>
+    </div>
+  </main>
+
+  <script src="./rich-editor.js"></script>
+  <script>
+    let editor2;
+
+    document.addEventListener('DOMContentLoaded', () => {
+
+      // Instance 2: full toolbar, preset dark theme, height: 300, onChange passing (html, el)
+      const instances2 = RichEditorQ.init('.editor-full', {
+        toolbar: true,
+        height: 300,
+        theme: 'light',
+        placeholder: 'Write notes here…',
+      });
+      editor2 = instances2[0];
+    });
+  </script>
+</body>
+
+</html>
