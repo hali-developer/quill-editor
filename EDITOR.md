@@ -1,4 +1,4 @@
-# EDITOR.md — RichEditorQ Documentation & Usage Guide
+# RichEditorQ Documentation & Usage Guide
 
 **RichEditorQ** is a feature-packed, theme-adaptive, and zero-clutter rich text editor built on top of [Quill.js v2.0.3](https://quilljs.com). Developed by **Hammad Ali**, it provides full control over rich content creation, custom image uploads, interactive table creation, dark/light theme switching, and clean HTML outputs.
 
