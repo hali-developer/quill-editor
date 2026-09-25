@@ -33,6 +33,7 @@ RichEditorQ leverages and extends **Quill.js**, an open-source WYSIWYG editor bu
 - **🖼️ Flexible Image Handling**: Upload via REST endpoints (`imageUploadUrl`), custom async handlers (`onImageUpload`), or direct image URL embedding with options to toggle file upload or URL inputs.
 - **🎨 Inline CSS Style Conversion**: `useInlineStyles: true` converts internal Quill classes to clean, standard inline CSS `style=""` attributes in the generated HTML.
 - **📊 Interactive Table Manager**: Create, edit, and modify HTML tables on the fly with dynamic modal controls for rows, columns, headers, and borders.
+- **🖥️ Full Screen View Mode**: Focus on distraction-free content writing with standard toolbar button toggle and <kbd>Esc</kbd> key shortcut support.
 - **🚀 Multi-Instance Ready**: Easily initialize single or multiple editor instances across textareas, inputs, or standard DOM elements using flexible query selectors.
 
 ---
@@ -194,6 +195,9 @@ editor.on('change', (html) => {
 | `clear()` | None | Resets editor to an empty state. |
 | `setTheme(theme)` | `'light'` \| `'dark'` \| `'auto'` | Toggles editor and modal themes dynamically. |
 | `getTheme()` | None | Returns active theme string (`'light'` or `'dark'`). |
+| `toggleFullscreen()` | None | Toggles editor full screen view mode. |
+| `setFullscreen(enable)` | `enable: Boolean` | Enables (`true`) or exits (`false`) full screen view mode. |
+| `isFullscreen()` | None | Returns `true` if editor is in full screen mode, `false` otherwise. |
 | `on(event, fn)` | `event: String`, `fn: Function` | Attaches event listener (e.g., `'change'`). |
 
 ---

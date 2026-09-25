@@ -9,7 +9,9 @@ class RichEditorQ {
     static icons = {
         highlight: '<svg viewBox="0 0 24 24"><path d="M8 15l6-11 3 2-7 12z"/><path d="M6 17l2 2-3 2-2-1z"/></svg>',
         table: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="3" y1="16" x2="21" y2="16"/><line x1="11" y1="4" x2="11" y2="20"/></svg>',
-        source: '<svg viewBox="0 0 24 24"><polyline points="8 6 3 12 8 18"/><polyline points="16 6 21 12 16 18"/></svg>'
+        source: '<svg viewBox="0 0 24 24"><polyline points="8 6 3 12 8 18"/><polyline points="16 6 21 12 16 18"/></svg>',
+        fullscreen: '<svg viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 15v6h-6M3 9V3h6"/></svg>',
+        exitFullscreen: '<svg viewBox="0 0 24 24"><path d="M4 14h6v6M20 10h-6V4M14 20v-6h6M10 4v6H4"/></svg>'
     };
 
     // ---- builds a fresh toolbar (every native Quill format group + our custom buttons) ----
@@ -62,10 +64,11 @@ class RichEditorQ {
          <button class="ql-video" title="Video"></button>
          <button type="button" class="re-btn" data-act="table" title="Insert table">${RichEditorQ.icons.table}</button>
        </span>`,
-            // clean + source view
+            // clean + source view + full screen
             `<span class="ql-formats">
          <button class="ql-clean" title="Clear formatting"></button>
          <button type="button" class="re-btn" data-act="source" title="View source">${RichEditorQ.icons.source}</button>
+         <button type="button" class="re-btn" data-act="fullscreen" title="Full screen">${RichEditorQ.icons.fullscreen}</button>
        </span>`
         ];
         return `<div id="qtb-${uid}" class="re-toolbar">${groups.join('')}</div>`;
@@ -106,6 +109,13 @@ class RichEditorQ {
                 configurable: true
             });
         }
+
+        this.isFullscreenMode = false;
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape' && this.isFullscreenMode) {
+                this.setFullscreen(false);
+            }
+        });
 
         this._build();
         if (this.opts.toolbar !== false && this.toolbarEl) {
@@ -638,6 +648,7 @@ class RichEditorQ {
             if (act === 'highlight') this._toggleHighlight();
             if (act === 'table') this._insertTable();
             if (act === 'source') this._toggleSource();
+            if (act === 'fullscreen') this.toggleFullscreen();
         });
     }
 
@@ -1040,12 +1051,17 @@ class RichEditorQ {
 
     _toggleSource() {
         const inSource = this.wrap.classList.contains('source-mode');
+        const srcBtn = this.toolbarEl ? this.toolbarEl.querySelector('[data-act="source"]') : null;
         if (!inSource) {
             this.src.value = this.getHTML();
             this.wrap.classList.add('source-mode');
+            if (srcBtn) srcBtn.classList.add('ql-active');
+            setTimeout(() => this.src.focus(), 50);
         } else {
             this.setHTML(this.src.value);
             this.wrap.classList.remove('source-mode');
+            if (srcBtn) srcBtn.classList.remove('ql-active');
+            setTimeout(() => this.focus(), 50);
         }
     }
 
@@ -1098,6 +1114,47 @@ class RichEditorQ {
         if (attr) return attr;
         if (this.opts.theme && this.opts.theme !== 'auto') return this.opts.theme;
         return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+
+    toggleFullscreen() {
+        return this.setFullscreen(!this.isFullscreenMode);
+    }
+
+    setFullscreen(enable = true) {
+        this.isFullscreenMode = !!enable;
+        if (this.isFullscreenMode) {
+            this.wrap.classList.add('is-fullscreen');
+            document.body.classList.add('re-body-fullscreen');
+        } else {
+            this.wrap.classList.remove('is-fullscreen');
+            document.body.classList.remove('re-body-fullscreen');
+        }
+
+        if (this.toolbarEl) {
+            const btn = this.toolbarEl.querySelector('[data-act="fullscreen"]');
+            if (btn) {
+                btn.innerHTML = this.isFullscreenMode ? RichEditorQ.icons.exitFullscreen : RichEditorQ.icons.fullscreen;
+                btn.setAttribute('title', this.isFullscreenMode ? 'Exit full screen' : 'Full screen');
+                btn.classList.toggle('ql-active', this.isFullscreenMode);
+            }
+        }
+
+        if (this.wrap.classList.contains('source-mode')) {
+            if (this.src) setTimeout(() => this.src.focus(), 50);
+        } else if (this.quill) {
+            this.quill.blur();
+            this.quill.focus();
+        }
+
+        this.source.dispatchEvent(new CustomEvent('richeditor:fullscreen', {
+            detail: { isFullscreen: this.isFullscreenMode, el: this.source, editor: this }
+        }));
+
+        return this.isFullscreenMode;
+    }
+
+    isFullscreen() {
+        return !!this.isFullscreenMode;
     }
 
     getHTML() {
