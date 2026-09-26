@@ -122,6 +122,7 @@ class RichEditorQ {
             this._bindCustomButtons();
         }
         this._bindImageEvents();
+        this._bindTableEvents();
         this._bindChange();
         RichEditorQ.instances.push(this);
     }
@@ -204,16 +205,28 @@ class RichEditorQ {
                         const tableHtml = typeof value === 'string' ? value : (value && value.html ? value.html : '');
 
                         const temp = document.createElement('div');
-                        temp.innerHTML = (tableHtml || '').trim();
+                        // Strip Word/Outlook-specific mso-* inline styles and class names
+                        const cleaned = (tableHtml || '').trim()
+                            .replace(/\s*mso-[^:;"']*:[^;"']*(;|(?="))/gi, '')
+                            .replace(/\s*class="Mso[^"]*"/gi, '')
+                            .replace(/\s*lang="[^"]*"/gi, '');
+                        temp.innerHTML = cleaned;
                         const table = temp.querySelector('table') || temp.firstElementChild;
 
                         if (table) {
+                            if (!table.style.borderCollapse) table.style.borderCollapse = 'collapse';
+                            if (!table.style.width) table.style.width = '100%';
                             table.querySelectorAll('th, td').forEach(cell => {
                                 cell.setAttribute('contenteditable', 'true');
+                                // Apply default border if none already present
+                                const existing = cell.getAttribute('style') || '';
+                                if (!existing.includes('border')) {
+                                    cell.setAttribute('style', (existing + (existing && !existing.endsWith(';') ? '; ' : '') + 'border: 1px solid #dfe1e6; padding: 8px;').trim());
+                                }
                             });
                             node.appendChild(table);
                         } else {
-                            node.innerHTML = tableHtml;
+                            node.innerHTML = cleaned;
                         }
                         return node;
                     }
@@ -230,6 +243,20 @@ class RichEditorQ {
 
                     html() {
                         return CustomTableBlot.value(this.domNode).html;
+                    }
+
+                    // CRITICAL FIX: Returning a truthy function here causes Quill's
+                    // ScrollBlot.update() to filter OUT mutations inside this blot
+                    // (the filter is: `return n && !g(n)` where g checks for updateContent).
+                    // Without this, Quill processes cell keystrokes as unknown DOM mutations
+                    // and resets/removes the table during its reconciliation cycle.
+                    updateContent(delta) {
+                        // Intentionally a no-op — cell edits are tracked by our MutationObserver
+                    }
+
+                    // Prevent BlockEmbed's optimize() from unwrapping/merging this node
+                    optimize(context) {
+                        // Intentionally empty — do NOT call super.optimize()
                     }
                 }
                 Quill.register(CustomTableBlot, true);
@@ -336,6 +363,73 @@ class RichEditorQ {
                 this.openEditImageDialog(e.target);
             }
         });
+    }
+
+    _bindTableEvents() {
+        // Intercept keydown inside table cells in the capture phase so Quill's
+        // root keyboard handlers (e.g., Backspace, Delete) never catch cell typing
+        // and mistakenly delete the custom table embed blot.
+        this.quill.root.addEventListener('keydown', e => {
+            const cell = e.target.closest('td, th');
+            if (cell) {
+                // Stop event from bubbling up to Quill's keyboard handlers
+                e.stopPropagation();
+
+                // Handle Tab navigation between cells
+                if (e.key === 'Tab') {
+                    e.preventDefault();
+                    const table = cell.closest('table');
+                    if (table) {
+                        const cells = Array.from(table.querySelectorAll('td, th'));
+                        const idx = cells.indexOf(cell);
+                        if (idx !== -1) {
+                            const nextIdx = e.shiftKey ? idx - 1 : idx + 1;
+                            if (cells[nextIdx]) {
+                                cells[nextIdx].focus();
+                            }
+                        }
+                    }
+                }
+            }
+        }, true);
+
+        // Open the table-edit dialog on double-click anywhere inside a table
+        this.quill.root.addEventListener('dblclick', e => {
+            const cell = e.target.closest('td, th');
+            const tableEl = e.target.closest('table');
+            if (tableEl) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.openEditTableDialog(tableEl, cell || tableEl);
+            }
+        });
+
+        // MutationObserver: watch for style/attribute/content changes made directly inside
+        // contenteditable table cells and persist them through _onChange so Quill
+        // does not strip the table on the next text-change cycle.
+        this._tableMutationObserver = new MutationObserver(mutations => {
+            const relevant = mutations.some(m => {
+                const target = m.target;
+                // Only care about mutations inside a re-table-wrapper
+                return target.closest && target.closest('.re-table-wrapper');
+            });
+            if (relevant) {
+                // Debounce slightly so rapid typing doesn't fire excessively
+                clearTimeout(this._tableMutationTimer);
+                this._tableMutationTimer = setTimeout(() => this._onChange(), 120);
+            }
+        });
+
+        // Observe the entire editor root for subtree mutations
+        if (this.quill && this.quill.root) {
+            this._tableMutationObserver.observe(this.quill.root, {
+                childList: true,
+                subtree: true,
+                characterData: true,
+                attributes: true,
+                attributeFilter: ['style', 'class']
+            });
+        }
     }
 
     openInsertImageDialog() {
@@ -824,17 +918,50 @@ class RichEditorQ {
         const colsCount = firstTr ? firstTr.children.length : 0;
         const hasHeader = !!tableEl.querySelector('thead');
 
+        // Read current styles from the table / cells for the style pickers
+        const firstTd = tableEl.querySelector('td');
+        const firstTh = tableEl.querySelector('th');
+        const currentBorderColor = (() => {
+            const sample = firstTd || firstTh;
+            if (!sample) return '#dfe1e6';
+            const m = (sample.getAttribute('style') || '').match(/border[^:]*:\s*[^\s]+\s+([^;]+)/);
+            return m ? m[1].trim() : '#dfe1e6';
+        })();
+        const currentCellBg = (() => {
+            if (!firstTd) return '#ffffff';
+            const m = (firstTd.getAttribute('style') || '').match(/background(?:-color)?\s*:\s*([^;]+)/);
+            return m ? m[1].trim() : '#ffffff';
+        })();
+        const currentHeaderBg = (() => {
+            if (!firstTh) return '#f5f5f5';
+            const m = (firstTh.getAttribute('style') || '').match(/background(?:-color)?\s*:\s*([^;]+)/);
+            return m ? m[1].trim() : '#f5f5f5';
+        })();
+        const currentTextColor = (() => {
+            const sample = firstTd || firstTh;
+            if (!sample) return '#000000';
+            const m = (sample.getAttribute('style') || '').match(/(?:^|;)\s*color\s*:\s*([^;]+)/);
+            return m ? m[1].trim() : '#000000';
+        })();
+        const currentBorderWidth = (() => {
+            const sample = firstTd || firstTh;
+            if (!sample) return '1';
+            const m = (sample.getAttribute('style') || '').match(/border[^:]*:\s*(\d+)px/);
+            return m ? m[1] : '1';
+        })();
+
         const overlay = document.createElement('div');
         overlay.className = 're-modal-overlay';
         overlay.innerHTML = `
-          <div class="re-modal" style="max-width: 440px;">
+          <div class="re-modal" style="max-width: 480px;">
             <div class="re-modal-header">
               <h3 class="re-modal-title">Table Options &amp; Controls</h3>
               <button type="button" class="re-modal-close">&times;</button>
             </div>
             <div class="re-modal-body">
-              <div style="font-size: 13px; color: var(--modal-muted, #6b6f76); margin-bottom: 4px;">
+              <div style="font-size: 13px; color: var(--modal-muted, #6b6f76); margin-bottom: 12px;">
                 Selected Table: <strong>${rowsCount} Rows &times; ${colsCount} Columns</strong>
+                <span style="font-size:11px; display:block; margin-top:3px; opacity:0.8;">💡 Double-click any cell to open this dialog</span>
               </div>
 
               <div class="re-form-group">
@@ -859,8 +986,42 @@ class RichEditorQ {
                 <label class="re-form-label">Table Structure</label>
                 <div style="display:flex; gap:12px; align-items:center;">
                   <button type="button" class="re-btn-action" id="btn-toggle-header" style="flex:1;">
-                    ${hasHeader ? 'Remove Header Row (<th>)' : 'Add Header Row (<th>)'}
+                    ${hasHeader ? 'Remove Header Row (&lt;th&gt;)' : 'Add Header Row (&lt;th&gt;)'}
                   </button>
+                </div>
+              </div>
+
+              <hr style="border:none; border-top:1px solid var(--modal-border, #e0e0e0); margin: 12px 0;">
+
+              <div class="re-form-group">
+                <label class="re-form-label" style="font-weight:700;">🎨 Table Styles</label>
+                <div class="re-form-row" style="flex-wrap:wrap; gap:12px;">
+                  <div class="re-form-group" style="flex:1; min-width:140px;">
+                    <label class="re-form-label">Border Color</label>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                      <input type="color" id="tbl-border-color" value="${this._cssColorToHex(currentBorderColor)}" style="width:40px; height:32px; border:none; cursor:pointer; border-radius:4px;">
+                      <input type="number" id="tbl-border-width" value="${currentBorderWidth}" min="0" max="10" style="width:60px;" class="re-input" placeholder="px">
+                      <span style="font-size:11px; opacity:0.7;">px</span>
+                    </div>
+                  </div>
+                  <div class="re-form-group" style="flex:1; min-width:140px;">
+                    <label class="re-form-label">Text Color</label>
+                    <input type="color" id="tbl-text-color" value="${this._cssColorToHex(currentTextColor)}" style="width:40px; height:32px; border:none; cursor:pointer; border-radius:4px;">
+                  </div>
+                </div>
+                <div class="re-form-row" style="flex-wrap:wrap; gap:12px; margin-top:8px;">
+                  <div class="re-form-group" style="flex:1; min-width:140px;">
+                    <label class="re-form-label">Cell Background</label>
+                    <input type="color" id="tbl-cell-bg" value="${this._cssColorToHex(currentCellBg)}" style="width:40px; height:32px; border:none; cursor:pointer; border-radius:4px;">
+                  </div>
+                  <div class="re-form-group" style="flex:1; min-width:140px;">
+                    <label class="re-form-label">Header Background</label>
+                    <input type="color" id="tbl-header-bg" value="${this._cssColorToHex(currentHeaderBg)}" style="width:40px; height:32px; border:none; cursor:pointer; border-radius:4px;">
+                  </div>
+                </div>
+                <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+                  <button type="button" class="re-btn-action" id="btn-apply-styles" style="flex:1; background: var(--modal-accent, #2f81f7); color:#fff; border-color: var(--modal-accent, #2f81f7);">✅ Apply Styles</button>
+                  <button type="button" class="re-btn-action" id="btn-apply-selected-cell" style="flex:1;">🎯 Apply to Selected Cell</button>
                 </div>
               </div>
             </div>
@@ -923,6 +1084,82 @@ class RichEditorQ {
             this._toggleTableHeader(tableEl);
             closeDialog();
         });
+
+        // Apply styles to the whole table
+        overlay.querySelector('#btn-apply-styles').addEventListener('click', () => {
+            this._applyTableStyles(tableEl, overlay);
+            closeDialog();
+        });
+
+        // Apply styles only to the clicked cell
+        overlay.querySelector('#btn-apply-selected-cell').addEventListener('click', () => {
+            const cell = targetCell && targetCell.tagName !== 'TABLE' ? targetCell.closest('td, th') : null;
+            if (cell) {
+                this._applyTableStyles(tableEl, overlay, cell);
+            } else {
+                this._applyTableStyles(tableEl, overlay);
+            }
+            closeDialog();
+        });
+    }
+
+    // Convert a CSS color value (name / rgb() / #hex) to a #hex string for <input type=color>
+    _cssColorToHex(color) {
+        if (!color || color === 'transparent') return '#ffffff';
+        color = color.trim();
+        if (/^#[0-9a-f]{3,8}$/i.test(color)) {
+            // Expand 3-digit hex
+            if (color.length === 4) {
+                return '#' + color[1] + color[1] + color[2] + color[2] + color[3] + color[3];
+            }
+            return color.slice(0, 7);
+        }
+        // Use canvas to convert any CSS color to hex
+        try {
+            const canvas = document.createElement('canvas');
+            canvas.width = canvas.height = 1;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = color;
+            ctx.fillRect(0, 0, 1, 1);
+            const d = ctx.getImageData(0, 0, 1, 1).data;
+            return '#' + [d[0], d[1], d[2]].map(v => v.toString(16).padStart(2, '0')).join('');
+        } catch (e) {
+            return '#000000';
+        }
+    }
+
+    // Apply color/border styles from the dialog to the table cells
+    _applyTableStyles(tableEl, overlay, singleCell = null) {
+        const borderColor = overlay.querySelector('#tbl-border-color').value;
+        const borderWidth = parseInt(overlay.querySelector('#tbl-border-width').value, 10) || 1;
+        const textColor = overlay.querySelector('#tbl-text-color').value;
+        const cellBg = overlay.querySelector('#tbl-cell-bg').value;
+        const headerBg = overlay.querySelector('#tbl-header-bg').value;
+        const borderStyle = `${borderWidth}px solid ${borderColor}`;
+
+        const applyToCell = (cell) => {
+            const isHeader = cell.tagName === 'TH';
+            let style = cell.getAttribute('style') || '';
+            // Helper to set/replace a CSS property in the style string
+            const setStyle = (prop, value) => {
+                const re = new RegExp(`(?:^|;)\\s*${prop.replace('-', '\\-')}\\s*:[^;]*`, 'gi');
+                style = style.replace(re, '');
+                style = style.replace(/;\s*;/g, ';').replace(/^\s*;/, '').trim();
+                style += (style && !style.endsWith(';') ? '; ' : '') + `${prop}: ${value};`;
+            };
+            setStyle('border', borderStyle);
+            setStyle('color', textColor);
+            setStyle('background-color', isHeader ? headerBg : cellBg);
+            cell.setAttribute('style', style.trim());
+        };
+
+        if (singleCell) {
+            applyToCell(singleCell);
+        } else {
+            tableEl.querySelectorAll('td, th').forEach(applyToCell);
+        }
+
+        this._onChange();
     }
 
     _addRowToTable(tableEl, targetCell, position = 'below') {
@@ -934,6 +1171,7 @@ class RichEditorQ {
 
         for (let c = 0; c < colCount; c++) {
             const cell = document.createElement(isHeaderRow && position === 'above' ? 'th' : 'td');
+            cell.setAttribute('contenteditable', 'true');
             cell.style.cssText = 'border:1px solid #dfe1e6; padding:8px;' + (isHeaderRow && position === 'above' ? ' background:rgba(0,0,0,0.04); font-weight:bold;' : '');
             cell.innerHTML = '&nbsp;';
             newTr.appendChild(cell);
@@ -972,6 +1210,7 @@ class RichEditorQ {
         trs.forEach(tr => {
             const isHeader = tr.parentNode.tagName === 'THEAD' || tr.children[0]?.tagName === 'TH';
             const newCell = document.createElement(isHeader ? 'th' : 'td');
+            newCell.setAttribute('contenteditable', 'true');
             newCell.style.cssText = 'border:1px solid #dfe1e6; padding:8px;' + (isHeader ? ' background:rgba(0,0,0,0.04); font-weight:bold;' : '');
             newCell.innerHTML = isHeader ? 'Header' : '&nbsp;';
 
@@ -1025,6 +1264,7 @@ class RichEditorQ {
             trs.forEach(tr => {
                 Array.from(tr.children).forEach(cell => {
                     const td = document.createElement('td');
+                    td.setAttribute('contenteditable', 'true');
                     td.style.cssText = 'border:1px solid #dfe1e6; padding:8px;';
                     td.innerHTML = cell.innerHTML;
                     cell.replaceWith(td);
@@ -1039,6 +1279,7 @@ class RichEditorQ {
             const newThead = document.createElement('thead');
             Array.from(firstTr.children).forEach(cell => {
                 const th = document.createElement('th');
+                th.setAttribute('contenteditable', 'true');
                 th.style.cssText = 'border:1px solid #dfe1e6; padding:8px; background:rgba(0,0,0,0.04); font-weight:bold;';
                 th.innerHTML = cell.innerHTML;
                 cell.replaceWith(th);
@@ -1070,7 +1311,8 @@ class RichEditorQ {
     }
 
     _onChange() {
-        const isEmpty = (this.quill.getText() || '').trim().length === 0;
+        const hasEmbeds = !!(this.quill && this.quill.root && this.quill.root.querySelector('.re-table-wrapper, img, iframe, video, embed, object'));
+        const isEmpty = !hasEmbeds && (this.quill.getText() || '').trim().length === 0;
         let html = '';
         if (!isEmpty) {
             const rawHtml = this.quill.root.innerHTML;
@@ -1158,7 +1400,8 @@ class RichEditorQ {
     }
 
     getHTML() {
-        const isEmpty = (this.quill.getText() || '').trim().length === 0;
+        const hasEmbeds = !!(this.quill && this.quill.root && this.quill.root.querySelector('.re-table-wrapper, img, iframe, video, embed, object'));
+        const isEmpty = !hasEmbeds && (this.quill.getText() || '').trim().length === 0;
         if (isEmpty) return '';
         const rawHtml = this.quill.root.innerHTML;
         return this.opts.useInlineStyles !== false ? RichEditorQ.convertClassesToInlineCSS(rawHtml) : rawHtml;
@@ -1241,6 +1484,8 @@ class RichEditorQ {
                 el.setAttribute('style', currentStyle.trim());
             }
         });
+
+        temp.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
 
         return temp.innerHTML;
     }
