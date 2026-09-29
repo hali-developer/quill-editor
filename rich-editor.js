@@ -365,10 +365,145 @@ class RichEditorQ {
         });
     }
 
+    _focusCell(cell) {
+        if (!cell) return;
+        cell.focus();
+        try {
+            const sel = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(cell);
+            range.collapse(false);
+            sel.removeAllRanges();
+            sel.addRange(range);
+        } catch (e) {}
+    }
+
     _bindTableEvents() {
         if (!this.quill || !this.quill.root) return;
 
-        // Trigger change whenever typing, editing, pasting, or blurring inside table cells
+        // Capture-phase paste handler to prevent Quill root clipboard from deleting table cells on paste
+        this.quill.root.addEventListener('paste', e => {
+            const cell = e.target.closest ? e.target.closest('td, th') : null;
+            if (!cell) return;
+
+            // Stop Quill's document-level clipboard module from wiping out the cell/table
+            e.stopImmediatePropagation();
+            e.stopPropagation();
+            e.preventDefault();
+
+            const clipboardData = e.clipboardData || window.clipboardData;
+            if (!clipboardData) return;
+
+            const pastedHtml = clipboardData.getData('text/html');
+            const pastedText = clipboardData.getData('text/plain');
+
+            if (pastedHtml) {
+                const temp = document.createElement('div');
+                temp.innerHTML = pastedHtml;
+                temp.querySelectorAll('script, style, meta, title').forEach(el => el.remove());
+
+                // If pasted HTML contains nested tables, flatten them into text nodes so cells remain intact
+                temp.querySelectorAll('table').forEach(tbl => {
+                    const textNode = document.createTextNode(tbl.textContent);
+                    tbl.replaceWith(textNode);
+                });
+
+                const cleanContent = temp.innerHTML.trim();
+                if (cleanContent) {
+                    const sel = window.getSelection();
+                    if (sel && sel.rangeCount > 0 && cell.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+                        const range = sel.getRangeAt(0);
+                        range.deleteContents();
+                        const fragment = range.createContextualFragment(cleanContent);
+                        const lastNode = fragment.lastChild;
+                        range.insertNode(fragment);
+                        if (lastNode) {
+                            range.setStartAfter(lastNode);
+                            range.setEndAfter(lastNode);
+                            sel.removeAllRanges();
+                            sel.addRange(range);
+                        }
+                    } else {
+                        cell.innerHTML += cleanContent;
+                    }
+                }
+            } else if (pastedText) {
+                const sel = window.getSelection();
+                if (sel && sel.rangeCount > 0 && cell.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+                    const range = sel.getRangeAt(0);
+                    range.deleteContents();
+                    const lines = pastedText.split('\n');
+                    const fragment = document.createDocumentFragment();
+                    lines.forEach((line, idx) => {
+                        if (idx > 0) fragment.appendChild(document.createElement('br'));
+                        fragment.appendChild(document.createTextNode(line));
+                    });
+                    const lastNode = fragment.lastChild;
+                    range.insertNode(fragment);
+                    if (lastNode) {
+                        range.setStartAfter(lastNode);
+                        range.setEndAfter(lastNode);
+                        sel.removeAllRanges();
+                        sel.addRange(range);
+                    }
+                } else {
+                    cell.textContent += pastedText;
+                }
+            }
+
+            this._onChange();
+        }, true);
+
+        // Tab navigation and Enter linebreaks inside table cells (CKEditor & TinyMCE style)
+        this.quill.root.addEventListener('keydown', e => {
+            const cell = e.target.closest ? e.target.closest('td, th') : null;
+            if (!cell) return;
+            const table = cell.closest('table');
+            if (!table) return;
+
+            e.stopPropagation();
+
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                const allCells = Array.from(table.querySelectorAll('th, td'));
+                const currentIndex = allCells.indexOf(cell);
+                if (e.shiftKey) {
+                    if (currentIndex > 0) {
+                        this._focusCell(allCells[currentIndex - 1]);
+                    }
+                } else {
+                    if (currentIndex < allCells.length - 1) {
+                        this._focusCell(allCells[currentIndex + 1]);
+                    } else {
+                        // Last cell: auto-insert a new row below like CKEditor / TinyMCE
+                        this._addRowToTable(table, cell, 'below');
+                        setTimeout(() => {
+                            const trs = table.querySelectorAll('tr');
+                            const lastTr = trs[trs.length - 1];
+                            if (lastTr && lastTr.firstElementChild) {
+                                this._focusCell(lastTr.firstElementChild);
+                            }
+                        }, 30);
+                    }
+                }
+            } else if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey) {
+                e.preventDefault();
+                const sel = window.getSelection();
+                if (sel && sel.rangeCount > 0 && cell.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+                    const range = sel.getRangeAt(0);
+                    range.deleteContents();
+                    const br = document.createElement('br');
+                    range.insertNode(br);
+                    range.setStartAfter(br);
+                    range.setEndAfter(br);
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                }
+                this._onChange();
+            }
+        }, true);
+
+        // Trigger change whenever typing, editing, or blurring inside table cells
         const triggerChangeIfInTable = (e) => {
             const cell = e.target.closest ? e.target.closest('td, th, .re-table-wrapper') : null;
             if (cell) {
@@ -378,7 +513,6 @@ class RichEditorQ {
 
         this.quill.root.addEventListener('input', triggerChangeIfInTable);
         this.quill.root.addEventListener('keyup', triggerChangeIfInTable);
-        this.quill.root.addEventListener('paste', triggerChangeIfInTable);
         this.quill.root.addEventListener('blur', triggerChangeIfInTable, true);
 
         // Right-click contextmenu on table cell to open table options modal
@@ -391,10 +525,10 @@ class RichEditorQ {
             }
         });
 
-        // Double-click on table wrapper/border to open table options modal
+        // Double-click on table cell / wrapper to open table options modal
         this.quill.root.addEventListener('dblclick', e => {
             const table = e.target.closest('table');
-            if (table && e.target.tagName !== 'TD' && e.target.tagName !== 'TH') {
+            if (table) {
                 const targetCell = e.target.closest('td, th') || table;
                 this.openEditTableDialog(table, targetCell);
             }
