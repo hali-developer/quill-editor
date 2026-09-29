@@ -122,6 +122,7 @@ class RichEditorQ {
             this._bindCustomButtons();
         }
         this._bindImageEvents();
+        this._bindTableEvents();
         this._bindChange();
         RichEditorQ.instances.push(this);
     }
@@ -335,6 +336,62 @@ class RichEditorQ {
             if (e.target.tagName === 'IMG') {
                 this.openEditImageDialog(e.target);
             }
+        });
+    }
+
+    _bindTableEvents() {
+        if (!this.quill || !this.quill.root) return;
+
+        // Trigger change whenever typing, editing, pasting, or blurring inside table cells
+        const triggerChangeIfInTable = (e) => {
+            const cell = e.target.closest ? e.target.closest('td, th, .re-table-wrapper') : null;
+            if (cell) {
+                this._onChange();
+            }
+        };
+
+        this.quill.root.addEventListener('input', triggerChangeIfInTable);
+        this.quill.root.addEventListener('keyup', triggerChangeIfInTable);
+        this.quill.root.addEventListener('paste', triggerChangeIfInTable);
+        this.quill.root.addEventListener('blur', triggerChangeIfInTable, true);
+
+        // Right-click contextmenu on table cell to open table options modal
+        this.quill.root.addEventListener('contextmenu', e => {
+            const table = e.target.closest('table');
+            if (table) {
+                e.preventDefault();
+                const targetCell = e.target.closest('td, th') || table;
+                this.openEditTableDialog(table, targetCell);
+            }
+        });
+
+        // Double-click on table wrapper/border to open table options modal
+        this.quill.root.addEventListener('dblclick', e => {
+            const table = e.target.closest('table');
+            if (table && e.target.tagName !== 'TD' && e.target.tagName !== 'TH') {
+                const targetCell = e.target.closest('td, th') || table;
+                this.openEditTableDialog(table, targetCell);
+            }
+        });
+
+        // MutationObserver to capture internal DOM mutations inside table cells
+        const observer = new MutationObserver(mutations => {
+            let tableMutated = false;
+            for (const m of mutations) {
+                const node = m.target;
+                if (node && node.closest && node.closest('.re-table-wrapper')) {
+                    tableMutated = true;
+                    break;
+                }
+            }
+            if (tableMutated) {
+                this._onChange();
+            }
+        });
+        observer.observe(this.quill.root, {
+            childList: true,
+            subtree: true,
+            characterData: true
         });
     }
 
@@ -935,6 +992,7 @@ class RichEditorQ {
         for (let c = 0; c < colCount; c++) {
             const cell = document.createElement(isHeaderRow && position === 'above' ? 'th' : 'td');
             cell.style.cssText = 'border:1px solid #dfe1e6; padding:8px;' + (isHeaderRow && position === 'above' ? ' background:rgba(0,0,0,0.04); font-weight:bold;' : '');
+            cell.setAttribute('contenteditable', 'true');
             cell.innerHTML = '&nbsp;';
             newTr.appendChild(cell);
         }
@@ -973,6 +1031,7 @@ class RichEditorQ {
             const isHeader = tr.parentNode.tagName === 'THEAD' || tr.children[0]?.tagName === 'TH';
             const newCell = document.createElement(isHeader ? 'th' : 'td');
             newCell.style.cssText = 'border:1px solid #dfe1e6; padding:8px;' + (isHeader ? ' background:rgba(0,0,0,0.04); font-weight:bold;' : '');
+            newCell.setAttribute('contenteditable', 'true');
             newCell.innerHTML = isHeader ? 'Header' : '&nbsp;';
 
             const refCell = tr.children[colIndex];
@@ -1026,6 +1085,7 @@ class RichEditorQ {
                 Array.from(tr.children).forEach(cell => {
                     const td = document.createElement('td');
                     td.style.cssText = 'border:1px solid #dfe1e6; padding:8px;';
+                    td.setAttribute('contenteditable', 'true');
                     td.innerHTML = cell.innerHTML;
                     cell.replaceWith(td);
                 });
@@ -1040,6 +1100,7 @@ class RichEditorQ {
             Array.from(firstTr.children).forEach(cell => {
                 const th = document.createElement('th');
                 th.style.cssText = 'border:1px solid #dfe1e6; padding:8px; background:rgba(0,0,0,0.04); font-weight:bold;';
+                th.setAttribute('contenteditable', 'true');
                 th.innerHTML = cell.innerHTML;
                 cell.replaceWith(th);
             });
@@ -1070,7 +1131,8 @@ class RichEditorQ {
     }
 
     _onChange() {
-        const isEmpty = (this.quill.getText() || '').trim().length === 0;
+        const hasMediaOrTable = !!(this.quill && this.quill.root && this.quill.root.querySelector('table, img, iframe, video'));
+        const isEmpty = !hasMediaOrTable && (this.quill.getText() || '').trim().length === 0;
         let html = '';
         if (!isEmpty) {
             const rawHtml = this.quill.root.innerHTML;
@@ -1086,7 +1148,12 @@ class RichEditorQ {
     }
 
     _updateCount() {
-        const n = (this.quill.getText() || '').trim().length;
+        let n = (this.quill.getText() || '').trim().length;
+        if (this.quill && this.quill.root) {
+            this.quill.root.querySelectorAll('table').forEach(tbl => {
+                n += (tbl.textContent || '').trim().length;
+            });
+        }
         if (this.status) {
             const countEl = this.status.querySelector('.re-count');
             if (countEl) countEl.textContent = n + ' character' + (n === 1 ? '' : 's');
@@ -1158,7 +1225,8 @@ class RichEditorQ {
     }
 
     getHTML() {
-        const isEmpty = (this.quill.getText() || '').trim().length === 0;
+        const hasMediaOrTable = !!(this.quill && this.quill.root && this.quill.root.querySelector('table, img, iframe, video'));
+        const isEmpty = !hasMediaOrTable && (this.quill.getText() || '').trim().length === 0;
         if (isEmpty) return '';
         const rawHtml = this.quill.root.innerHTML;
         return this.opts.useInlineStyles !== false ? RichEditorQ.convertClassesToInlineCSS(rawHtml) : rawHtml;
@@ -1181,6 +1249,9 @@ class RichEditorQ {
         if (!html) return '';
         const temp = document.createElement('div');
         temp.innerHTML = html;
+
+        // Clean up contenteditable attributes from exported HTML
+        temp.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
 
         const alignMap = {
             'ql-align-center': 'text-align: center;',
