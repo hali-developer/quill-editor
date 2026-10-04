@@ -1664,7 +1664,9 @@
      align-items: center;
      justify-content: center;
      z-index: 99999;
-     padding: 16px;
+     padding: 20px 16px;
+     /* Allow overlay to scroll on very short viewports */
+     overflow-y: auto;
  }
 
  .re-modal {
@@ -1681,7 +1683,10 @@
      border: 1px solid var(--modal-line);
      border-radius: 12px;
      width: 100%;
-     max-width: 460px;
+     max-width: 480px;
+     /* Strict height cap: never exceed viewport */
+     height: auto;
+     max-height: min(calc(100vh - 48px), 92vh);
      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
      overflow: hidden;
      display: flex;
@@ -1719,6 +1724,7 @@
      justify-content: space-between;
      align-items: center;
      background: var(--modal-panel);
+     flex-shrink: 0;
  }
 
  .re-modal-title {
@@ -1747,6 +1753,9 @@
      display: flex;
      flex-direction: column;
      gap: 14px;
+     overflow-y: auto;
+     flex: 1 1 auto;
+     min-height: 0;
  }
 
  .re-modal-tabs {
@@ -1815,6 +1824,7 @@
      justify-content: flex-end;
      gap: 10px;
      background: var(--modal-panel);
+     flex-shrink: 0;
  }
 
  .re-btn-submit {
@@ -2081,3 +2091,69 @@
      opacity: 1;
      transform: translateY(0);
  }
+
+ /* Table Cell Text Alignment Support */
+ .ql-editor td.ql-align-center,
+ .ql-editor th.ql-align-center,
+ .ql-editor td[style*="text-align: center"],
+ .ql-editor th[style*="text-align: center"],
+ .ql-editor td[style*="text-align:center"],
+ .ql-editor th[style*="text-align:center"],
+ .ql-editor td .ql-align-center,
+ .ql-editor th .ql-align-center {
+     text-align: center !important;
+ }
+
+ .ql-editor td.ql-align-right,
+ .ql-editor th.ql-align-right,
+ .ql-editor td[style*="text-align: right"],
+ .ql-editor th[style*="text-align: right"],
+ .ql-editor td[style*="text-align:right"],
+ .ql-editor th[style*="text-align:right"],
+ .ql-editor td .ql-align-right,
+ .ql-editor th .ql-align-right {
+     text-align: right !important;
+ }
+
+ .ql-editor td.ql-align-justify,
+ .ql-editor th.ql-align-justify,
+ .ql-editor td[style*="text-align: justify"],
+ .ql-editor th[style*="text-align: justify"],
+ .ql-editor td[style*="text-align:justify"],
+ .ql-editor th[style*="text-align:justify"],
+ .ql-editor td .ql-align-justify,
+ .ql-editor th .ql-align-justify {
+     text-align: justify !important;
+ }
+
+ .ql-editor td.ql-align-left,
+ .ql-editor th.ql-align-left,
+ .ql-editor td[style*="text-align: left"],
+ .ql-editor th[style*="text-align: left"],
+ .ql-editor td[style*="text-align:left"],
+ .ql-editor th[style*="text-align:left"],
+ .ql-editor td .ql-align-left,
+ .ql-editor th .ql-align-left {
+     text-align: left !important;
+ }
+
+ /* Table Cell List Styling Support */
+ .ql-editor td ol,
+ .ql-editor th ol {
+     list-style-type: decimal !important;
+     padding-left: 1.5em !important;
+     margin: 0.5em 0 !important;
+ }
+
+ .ql-editor td ul,
+ .ql-editor th ul {
+     list-style-type: disc !important;
+     padding-left: 1.5em !important;
+     margin: 0.5em 0 !important;
+ }
+
+ .ql-editor td li:not([data-list]),
+ .ql-editor th li:not([data-list]) {
+     list-style-type: inherit !important;
+     padding-left: 0 !important;
+ }
