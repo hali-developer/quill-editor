@@ -881,28 +881,84 @@
      display: none
  }
 
+ .ql-editor p {
+     margin-top: 0;
+     margin-bottom: 0.75em;
+     line-height: 1.6;
+ }
+
+ .ql-editor h1,
  .ql-snow .ql-editor h1 {
-     font-size: 2em
+     font-size: 2.1rem;
+     font-weight: 700;
+     line-height: 1.25;
+     margin-top: 1.2em;
+     margin-bottom: 0.4em;
+     color: var(--heading, var(--ink, inherit));
+     letter-spacing: -0.02em;
  }
 
+ .ql-editor h2,
  .ql-snow .ql-editor h2 {
-     font-size: 1.5em
+     font-size: 1.65rem;
+     font-weight: 650;
+     line-height: 1.3;
+     margin-top: 1.1em;
+     margin-bottom: 0.35em;
+     color: var(--heading, var(--ink, inherit));
+     letter-spacing: -0.01em;
  }
 
+ .ql-editor h3,
  .ql-snow .ql-editor h3 {
-     font-size: 1.17em
+     font-size: 1.35rem;
+     font-weight: 600;
+     line-height: 1.35;
+     margin-top: 1em;
+     margin-bottom: 0.3em;
+     color: var(--heading, var(--ink, inherit));
  }
 
+ .ql-editor h4,
  .ql-snow .ql-editor h4 {
-     font-size: 1em
+     font-size: 1.15rem;
+     font-weight: 600;
+     line-height: 1.4;
+     margin-top: 0.9em;
+     margin-bottom: 0.25em;
+     color: var(--heading, var(--ink, inherit));
  }
 
+ .ql-editor h5,
  .ql-snow .ql-editor h5 {
-     font-size: .83em
+     font-size: 1rem;
+     font-weight: 600;
+     line-height: 1.4;
+     margin-top: 0.8em;
+     margin-bottom: 0.2em;
+     color: var(--heading, var(--ink, inherit));
  }
 
+ .ql-editor h6,
  .ql-snow .ql-editor h6 {
-     font-size: .67em
+     font-size: 0.875rem;
+     font-weight: 600;
+     line-height: 1.4;
+     margin-top: 0.8em;
+     margin-bottom: 0.2em;
+     text-transform: uppercase;
+     letter-spacing: 0.04em;
+     color: var(--muted, #6b6f76);
+ }
+
+ .ql-editor h1:first-child,
+ .ql-editor h2:first-child,
+ .ql-editor h3:first-child,
+ .ql-editor h4:first-child,
+ .ql-editor h5:first-child,
+ .ql-editor h6:first-child,
+ .ql-editor p:first-child {
+     margin-top: 0;
  }
 
  .ql-snow .ql-editor a {
@@ -1918,4 +1974,110 @@
  .ql-editor td[contenteditable="true"]:focus {
      outline: 2px solid var(--accent, #2f6feb);
      outline-offset: -1px;
+ }
+
+ /* Full Table Selection & Floating Quick Toolbar */
+ .ql-editor table.re-table-selected {
+     outline: 2px solid var(--accent, #2f6feb) !important;
+     outline-offset: 3px;
+     box-shadow: 0 0 0 4px rgba(47, 111, 235, 0.18) !important;
+     position: relative;
+ }
+
+ .re-table-floating-bar {
+     position: absolute;
+     z-index: 1000;
+     display: flex;
+     align-items: center;
+     gap: 4px;
+     padding: 4px 6px;
+     background: var(--surface, #ffffff);
+     border: 1px solid var(--border, #dfe1e6);
+     border-radius: 6px;
+     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
+     font-size: 12px;
+     user-select: none;
+     transition: opacity 0.15s ease, transform 0.15s ease;
+ }
+
+ [data-theme="dark"] .re-table-floating-bar,
+ body.dark-mode .re-table-floating-bar {
+     background: #1c2128;
+     border-color: #30363d;
+     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+ }
+
+ .re-table-floating-btn {
+     background: transparent;
+     border: none;
+     border-radius: 4px;
+     color: var(--ink, #1c1d1f);
+     padding: 5px 9px;
+     font-size: 12px;
+     font-weight: 500;
+     cursor: pointer;
+     display: inline-flex;
+     align-items: center;
+     gap: 5px;
+     white-space: nowrap;
+     transition: background 0.12s, color 0.12s;
+ }
+
+ [data-theme="dark"] .re-table-floating-btn,
+ body.dark-mode .re-table-floating-btn {
+     color: #c9d1d9;
+ }
+
+ .re-table-floating-btn:hover {
+     background: rgba(47, 111, 235, 0.12);
+     color: var(--accent, #2f6feb);
+ }
+
+ .re-table-floating-btn.danger:hover {
+     background: rgba(229, 83, 83, 0.12);
+     color: #e55353;
+ }
+
+ .re-table-floating-divider {
+     width: 1px;
+     height: 16px;
+     background: var(--line, #dfe1e6);
+     margin: 0 2px;
+ }
+
+ [data-theme="dark"] .re-table-floating-divider {
+     background: #30363d;
+ }
+
+ /* Toast Notifications */
+ .re-toast {
+     position: fixed;
+     bottom: 24px;
+     right: 24px;
+     background: #1f2328;
+     color: #ffffff;
+     padding: 10px 18px;
+     border-radius: 8px;
+     font-size: 13px;
+     font-weight: 500;
+     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+     z-index: 99999;
+     display: flex;
+     align-items: center;
+     gap: 8px;
+     opacity: 0;
+     transform: translateY(12px);
+     transition: opacity 0.2s ease, transform 0.2s ease;
+     pointer-events: none;
+ }
+
+ [data-theme="dark"] .re-toast {
+     background: #30363d;
+     color: #f0f6fc;
+     border: 1px solid #484f58;
+ }
+
+ .re-toast.show {
+     opacity: 1;
+     transform: translateY(0);
  }

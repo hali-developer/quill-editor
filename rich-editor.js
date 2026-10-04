@@ -515,6 +515,43 @@ class RichEditorQ {
         this.quill.root.addEventListener('keyup', triggerChangeIfInTable);
         this.quill.root.addEventListener('blur', triggerChangeIfInTable, true);
 
+        // Show floating toolbar on table click or focus
+        this.quill.root.addEventListener('click', e => {
+            const table = e.target.closest('table');
+            if (table) {
+                this._showTableFloatingBar(table);
+            } else if (!e.target.closest('.re-table-floating-bar')) {
+                this.deselectTable();
+            }
+        });
+
+        // Keyboard shortcuts for full table actions when selected
+        document.addEventListener('keydown', e => {
+            if (!this.selectedTable || !this.selectedTable.isConnected) return;
+            const isMac = /mac/i.test(navigator.platform);
+            const cmdKey = isMac ? e.metaKey : e.ctrlKey;
+
+            if (cmdKey && e.key.toLowerCase() === 'c') {
+                e.preventDefault();
+                this.copyTable(this.selectedTable);
+            } else if (cmdKey && e.key.toLowerCase() === 'x') {
+                e.preventDefault();
+                this.cutTable(this.selectedTable);
+            } else if (cmdKey && e.key.toLowerCase() === 'v') {
+                e.preventDefault();
+                this.pasteTable();
+            } else if (e.key === 'Backspace' || e.key === 'Delete') {
+                e.preventDefault();
+                const parentWrapper = this.selectedTable.closest('.re-table-wrapper') || this.selectedTable;
+                parentWrapper.remove();
+                this.deselectTable();
+                this._onChange();
+                this._showToast('🗑️ Table deleted');
+            } else if (e.key === 'Escape') {
+                this.deselectTable();
+            }
+        });
+
         // Right-click contextmenu on table cell to open table options modal
         this.quill.root.addEventListener('contextmenu', e => {
             const table = e.target.closest('table');
@@ -1088,6 +1125,16 @@ class RichEditorQ {
               </div>
 
               <div class="re-form-group">
+                <label class="re-form-label">Full Table Commands</label>
+                <div class="re-action-grid" style="grid-template-columns: repeat(4, 1fr);">
+                  <button type="button" class="re-btn-action" id="btn-tbl-select">🎯 Select</button>
+                  <button type="button" class="re-btn-action" id="btn-tbl-copy">📋 Copy</button>
+                  <button type="button" class="re-btn-action" id="btn-tbl-cut">✂️ Cut</button>
+                  <button type="button" class="re-btn-action" id="btn-tbl-paste">📋 Paste</button>
+                </div>
+              </div>
+
+              <div class="re-form-group">
                 <label class="re-form-label">Row Actions</label>
                 <div class="re-action-grid">
                   <button type="button" class="re-btn-action" id="btn-row-above">➕ Row Above</button>
@@ -1169,7 +1216,28 @@ class RichEditorQ {
 
         deleteTableBtn.addEventListener('click', () => {
             tableEl.remove();
+            this.deselectTable();
             this._onChange();
+            closeDialog();
+        });
+
+        overlay.querySelector('#btn-tbl-select').addEventListener('click', () => {
+            this.selectTable(tableEl);
+            closeDialog();
+        });
+
+        overlay.querySelector('#btn-tbl-copy').addEventListener('click', () => {
+            this.copyTable(tableEl);
+            closeDialog();
+        });
+
+        overlay.querySelector('#btn-tbl-cut').addEventListener('click', () => {
+            this.cutTable(tableEl);
+            closeDialog();
+        });
+
+        overlay.querySelector('#btn-tbl-paste').addEventListener('click', () => {
+            this.pasteTable();
             closeDialog();
         });
 
@@ -1415,6 +1483,316 @@ class RichEditorQ {
             tableEl.insertBefore(newThead, tableEl.firstChild);
         }
         this._onChange();
+    }
+
+    // Helper to get currently focused/active table element
+    _getActiveTable() {
+        if (this.selectedTable && this.selectedTable.isConnected) return this.selectedTable;
+        const sel = window.getSelection();
+        if (sel && sel.anchorNode) {
+            const el = sel.anchorNode.nodeType === Node.ELEMENT_NODE ? sel.anchorNode : sel.anchorNode.parentElement;
+            if (el) {
+                const tbl = el.closest('table');
+                if (tbl && this.quill.root.contains(tbl)) return tbl;
+            }
+        }
+        if (document.activeElement && this.quill.root.contains(document.activeElement)) {
+            const tbl = document.activeElement.closest('table');
+            if (tbl) return tbl;
+        }
+        return this.quill.root.querySelector('table.re-table-selected') || this.quill.root.querySelector('table');
+    }
+
+    // Command executor to run commands by string name or API call
+    execCommand(cmd, ...args) {
+        if (!cmd) return false;
+        switch (cmd.toLowerCase()) {
+            case 'selecttable':
+                return this.selectTable(args[0]);
+            case 'copytable':
+                return this.copyTable(args[0]);
+            case 'cuttable':
+                return this.cutTable(args[0]);
+            case 'pastetable':
+                return this.pasteTable(args[0]);
+            case 'deletetable':
+            case 'removetable':
+                const tbl = args[0] || this._getActiveTable();
+                if (tbl) {
+                    const wrapper = tbl.closest('.re-table-wrapper') || tbl;
+                    wrapper.remove();
+                    this.deselectTable();
+                    this._onChange();
+                    this._showToast('🗑️ Table deleted');
+                    return true;
+                }
+                return false;
+            case 'inserttable':
+                this.insertTable(args[0] || 3, args[1] || 3, args[2] !== false);
+                return true;
+            case 'edittable':
+            case 'tableoptions':
+                const t = args[0] || this._getActiveTable();
+                if (t) this.openEditTableDialog(t, args[1] || t);
+                return true;
+            case 'h1':
+            case 'h2':
+            case 'h3':
+            case 'h4':
+            case 'h5':
+            case 'h6':
+                const level = parseInt(cmd.replace('h', ''), 10);
+                this.quill.format('header', level);
+                return true;
+            case 'heading':
+                this.quill.format('header', args[0] || 1);
+                return true;
+            default:
+                if (typeof this[cmd] === 'function') {
+                    return this[cmd](...args);
+                }
+                return false;
+        }
+    }
+
+    // Select the entire table
+    selectTable(tableEl) {
+        const targetTable = tableEl || this._getActiveTable();
+        if (!targetTable) return null;
+
+        // Clear previous table selections
+        this.quill.root.querySelectorAll('table.re-table-selected').forEach(t => t.classList.remove('re-table-selected'));
+
+        targetTable.classList.add('re-table-selected');
+        this.selectedTable = targetTable;
+
+        // Set browser native DOM selection over table
+        try {
+            const sel = window.getSelection();
+            if (sel) {
+                const range = document.createRange();
+                range.selectNode(targetTable);
+                sel.removeAllRanges();
+                sel.addRange(range);
+            }
+        } catch (e) {
+            console.warn('DOM selectNode failed:', e);
+        }
+
+        this._showTableFloatingBar(targetTable);
+        this._showToast('🎯 Full table selected');
+        return targetTable;
+    }
+
+    // Deselect table
+    deselectTable() {
+        if (this.quill && this.quill.root) {
+            this.quill.root.querySelectorAll('table.re-table-selected').forEach(t => t.classList.remove('re-table-selected'));
+        }
+        this.selectedTable = null;
+        this._hideTableFloatingBar();
+    }
+
+    // Copy full table to clipboard
+    copyTable(tableEl) {
+        const targetTable = tableEl || this._getActiveTable();
+        if (!targetTable) {
+            this._showToast('⚠️ No table found to copy');
+            return null;
+        }
+
+        // Clone table to produce clean HTML output without temporary selection classes
+        const clone = targetTable.cloneNode(true);
+        clone.classList.remove('re-table-selected');
+        clone.querySelectorAll('.re-table-selected').forEach(el => el.classList.remove('re-table-selected'));
+        clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
+
+        const htmlContent = clone.outerHTML;
+
+        // Plain text TSV format for spreadsheet/notepad paste
+        const rows = Array.from(clone.querySelectorAll('tr'));
+        const textContent = rows.map(tr =>
+            Array.from(tr.querySelectorAll('th, td')).map(cell => (cell.textContent || '').trim()).join('\t')
+        ).join('\n');
+
+        // Store in static cache fallback
+        RichEditorQ.copiedTableHtml = htmlContent;
+        RichEditorQ.copiedTableText = textContent;
+
+        let writeSuccess = false;
+        if (navigator.clipboard && window.ClipboardItem) {
+            try {
+                const blobHtml = new Blob([htmlContent], { type: 'text/html' });
+                const blobText = new Blob([textContent], { type: 'text/plain' });
+                const item = new ClipboardItem({
+                    'text/html': blobHtml,
+                    'text/plain': blobText
+                });
+                navigator.clipboard.write([item]);
+                writeSuccess = true;
+            } catch (err) {
+                console.warn('ClipboardItem write failed, using fallback:', err);
+            }
+        }
+
+        if (!writeSuccess && navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(textContent).catch(() => {});
+        }
+
+        this._showToast('📋 Full table copied to clipboard!');
+        return htmlContent;
+    }
+
+    // Cut full table
+    cutTable(tableEl) {
+        const targetTable = tableEl || this._getActiveTable();
+        if (!targetTable) {
+            this._showToast('⚠️ No table found to cut');
+            return false;
+        }
+
+        this.copyTable(targetTable);
+
+        const parentWrapper = targetTable.closest('.re-table-wrapper') || targetTable;
+        parentWrapper.remove();
+        this.deselectTable();
+
+        if ((this.quill.getText() || '').trim().length === 0) {
+            this.quill.setText('');
+        }
+
+        this._onChange();
+        this._showToast('✂️ Full table cut to clipboard!');
+        return true;
+    }
+
+    // Paste table anywhere in editor
+    async pasteTable(htmlOrTable) {
+        let html = typeof htmlOrTable === 'string' ? htmlOrTable : (htmlOrTable && htmlOrTable.outerHTML ? htmlOrTable.outerHTML : '');
+
+        if (!html) {
+            // Try reading system clipboard html/text
+            if (navigator.clipboard && navigator.clipboard.read) {
+                try {
+                    const items = await navigator.clipboard.read();
+                    for (const item of items) {
+                        if (item.types.includes('text/html')) {
+                            const blob = await item.getType('text/html');
+                            html = await blob.text();
+                            break;
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Clipboard read failed:', e);
+                }
+            }
+        }
+
+        if (!html && RichEditorQ.copiedTableHtml) {
+            html = RichEditorQ.copiedTableHtml;
+        }
+
+        if (!html) {
+            this._showToast('⚠️ No table in clipboard to paste');
+            return false;
+        }
+
+        // Ensure string contains <table> tag
+        if (!/<table/i.test(html)) {
+            this._showToast('⚠️ Clipboard content is not a valid table');
+            return false;
+        }
+
+        const range = this.quill.getSelection(true) || { index: this.quill.getLength() };
+
+        // Deselect current table if pasting over or replacing
+        if (this.selectedTable) {
+            const parentWrapper = this.selectedTable.closest('.re-table-wrapper') || this.selectedTable;
+            parentWrapper.remove();
+            this.deselectTable();
+        }
+
+        this.quill.clipboard.dangerouslyPasteHTML(range.index, html);
+        this._onChange();
+        this._showToast('📋 Table pasted successfully!');
+        return true;
+    }
+
+    // Show floating quick-action bar for tables
+    _showTableFloatingBar(tableEl) {
+        if (!tableEl) return;
+        this._hideTableFloatingBar();
+
+        const bar = document.createElement('div');
+        bar.className = 're-table-floating-bar';
+        bar.innerHTML = `
+            <button type="button" class="re-table-floating-btn" data-act="select" title="Select entire table">🎯 Select</button>
+            <button type="button" class="re-table-floating-btn" data-act="copy" title="Copy full table">📋 Copy</button>
+            <button type="button" class="re-table-floating-btn" data-act="cut" title="Cut full table">✂️ Cut</button>
+            <button type="button" class="re-table-floating-btn" data-act="paste" title="Paste table">📋 Paste</button>
+            <div class="re-table-floating-divider"></div>
+            <button type="button" class="re-table-floating-btn" data-act="options" title="Table formatting & options">⚙️ Options</button>
+            <button type="button" class="re-table-floating-btn danger" data-act="delete" title="Delete table">🗑️</button>
+        `;
+
+        const wrap = this.wrap || this.quill.container;
+        wrap.style.position = 'relative';
+        wrap.appendChild(bar);
+
+        // Position bar above the table
+        const rect = tableEl.getBoundingClientRect();
+        const wrapRect = wrap.getBoundingClientRect();
+
+        const top = Math.max(0, rect.top - wrapRect.top - 36);
+        const left = Math.max(10, rect.left - wrapRect.left);
+
+        bar.style.top = top + 'px';
+        bar.style.left = left + 'px';
+
+        bar.addEventListener('click', e => {
+            const btn = e.target.closest('.re-table-floating-btn');
+            if (!btn) return;
+            const act = btn.dataset.act;
+            if (act === 'select') this.selectTable(tableEl);
+            if (act === 'copy') this.copyTable(tableEl);
+            if (act === 'cut') this.cutTable(tableEl);
+            if (act === 'paste') this.pasteTable();
+            if (act === 'options') this.openEditTableDialog(tableEl, tableEl);
+            if (act === 'delete') {
+                const wrapper = tableEl.closest('.re-table-wrapper') || tableEl;
+                wrapper.remove();
+                this.deselectTable();
+                this._onChange();
+                this._showToast('🗑️ Table deleted');
+            }
+        });
+
+        this.floatingBarEl = bar;
+    }
+
+    _hideTableFloatingBar() {
+        if (this.floatingBarEl) {
+            this.floatingBarEl.remove();
+            this.floatingBarEl = null;
+        }
+    }
+
+    // Helper to display toast notifications
+    _showToast(message) {
+        let toast = document.querySelector('.re-toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.className = 're-toast';
+            document.body.appendChild(toast);
+        }
+        toast.setAttribute('data-theme', this.getTheme());
+        toast.innerHTML = message;
+        toast.classList.add('show');
+
+        if (this._toastTimeout) clearTimeout(this._toastTimeout);
+        this._toastTimeout = setTimeout(() => {
+            toast.classList.remove('show');
+        }, 2200);
     }
 
     _toggleSource() {

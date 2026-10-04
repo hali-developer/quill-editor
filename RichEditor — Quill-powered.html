@@ -178,17 +178,18 @@
 <body>
 
   <main>
-
-
     <div class="card">
       <div class="card-header">
         <div>
-          <h2 class="card-title">Instance 2: Full Rich Toolbar &amp; Dark Theme Preset</h2>
-          <p class="card-desc">Initialized with full toolbar enabled, custom height, and preset
-            <code>theme: 'dark'</code>.
+          <h2 class="card-title">Rich Text Editor — Word Document Formatting &amp; Table Commands</h2>
+          <p class="card-desc">Features standard heading sizes (H1–H6), Word-style paragraph spacing, and full table selection, copy, cut, and paste commands.
           </p>
         </div>
-        <div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <button type="button" class="btn" onclick="editor2.selectTable()">🎯 Select Table</button>
+          <button type="button" class="btn" onclick="editor2.copyTable()">📋 Copy Table</button>
+          <button type="button" class="btn" onclick="editor2.cutTable()">✂️ Cut Table</button>
+          <button type="button" class="btn" onclick="editor2.pasteTable()">📋 Paste Table</button>
           <button type="button" class="btn" onclick="editor2.setTheme('light')">Light</button>
           <button type="button" class="btn" onclick="editor2.setTheme('dark')">Dark</button>
           <button type="button" class="btn btn-primary" onclick="editor2.toggleFullscreen()">Full Screen</button>
@@ -196,7 +197,7 @@
       </div>
 
       <textarea class="editor-full" name="content_full"
-        data-placeholder="Write rich notes…">&lt;h3&gt;Full Toolbar Feature Demo&lt;/h3&gt;&lt;p&gt;Try adding &lt;strong&gt;formatting&lt;/strong&gt;, lists, code blocks, or click the custom &lt;mark&gt;highlight&lt;/mark&gt; and &lt;code&gt;Source View&lt;/code&gt; buttons!&lt;/p&gt;</textarea>
+        data-placeholder="Write rich notes…">&lt;h1&gt;Standard Heading Level 1 (Document Title)&lt;/h1&gt;&lt;p&gt;This is a standard Word-style document paragraph with proportional line height (1.6) and paragraph spacing. Headings now have clean visual hierarchy, proper font sizes, and top/bottom margins.&lt;/p&gt;&lt;h2&gt;Heading Level 2 (Section Title)&lt;/h2&gt;&lt;p&gt;Below is a sample table. Click anywhere on the table to reveal the floating action bar, or double-click / right-click to open the full Table Options modal.&lt;/p&gt;&lt;table style="width:100%; border-collapse:collapse; margin:12px 0;"&gt;&lt;thead&gt;&lt;tr&gt;&lt;th style="border:1px solid #dfe1e6; padding:8px; background:rgba(0,0,0,0.04); font-weight:bold;"&gt;Item Name&lt;/th&gt;&lt;th style="border:1px solid #dfe1e6; padding:8px; background:rgba(0,0,0,0.04); font-weight:bold;"&gt;Category&lt;/th&gt;&lt;th style="border:1px solid #dfe1e6; padding:8px; background:rgba(0,0,0,0.04); font-weight:bold;"&gt;Status&lt;/th&gt;&lt;/tr&gt;&lt;/thead&gt;&lt;tbody&gt;&lt;tr&gt;&lt;td style="border:1px solid #dfe1e6; padding:8px;"&gt;Quill Editor Core&lt;/td&gt;&lt;td style="border:1px solid #dfe1e6; padding:8px;"&gt;Frontend Widget&lt;/td&gt;&lt;td style="border:1px solid #dfe1e6; padding:8px;"&gt;Active&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td style="border:1px solid #dfe1e6; padding:8px;"&gt;Full Table Clipboard&lt;/td&gt;&lt;td style="border:1px solid #dfe1e6; padding:8px;"&gt;Commands &amp; UI&lt;/td&gt;&lt;td style="border:1px solid #dfe1e6; padding:8px;"&gt;Enabled&lt;/td&gt;&lt;/tr&gt;&lt;/tbody&gt;&lt;/table&gt;&lt;h3&gt;Heading Level 3 (Sub-section)&lt;/h3&gt;&lt;p&gt;You can use keyboard shortcuts &lt;kbd&gt;Ctrl+C&lt;/kbd&gt;, &lt;kbd&gt;Ctrl+X&lt;/kbd&gt;, and &lt;kbd&gt;Ctrl+V&lt;/kbd&gt; on a selected table, or call &lt;code&gt;editor.execCommand('copyTable')&lt;/code&gt; via API.&lt;/p&gt;&lt;h4&gt;Heading Level 4 (Minor Section)&lt;/h4&gt;&lt;p&gt;All headings H1 through H6 have standard sizes and Word document formatting.&lt;/p&gt;</textarea>
 
       <div class="output-label">Live Synced Target Element (.value):</div>
       <div id="output2" class="output-box"></div>
@@ -209,10 +210,10 @@
 
     document.addEventListener('DOMContentLoaded', () => {
 
-      // Instance 2: full toolbar, preset dark theme, height: 300, onChange passing (html, el)
+      // Instance 2: full toolbar, preset dark theme, height: 350, onChange passing (html, el)
       const instances2 = RichEditorQ.init('.editor-full', {
         toolbar: true,
-        height: 300,
+        height: 380,
         theme: 'light',
         placeholder: 'Write notes here…',
       });
