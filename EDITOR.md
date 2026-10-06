@@ -33,6 +33,8 @@ RichEditorQ leverages and extends **Quill.js**, an open-source WYSIWYG editor bu
 - **🖼️ Flexible Image Handling**: Upload via REST endpoints (`imageUploadUrl`), custom async handlers (`onImageUpload`), or direct image URL embedding with options to toggle file upload or URL inputs.
 - **🎨 Inline CSS Style Conversion**: `useInlineStyles: true` converts internal Quill classes to clean, standard inline CSS `style=""` attributes in the generated HTML.
 - **📊 Interactive Table Manager**: Create, edit, and modify HTML tables on the fly with dynamic modal controls for rows, columns, headers, and borders.
+- **🖱️ Mouse & Cursor Table Row Selection**: Select table rows, columns, or cell matrices with mouse drag selection or row gutter handle controls (`☰`).
+- **📐 8-Side Table Size Dragging**: Drag resize handles from all 4 sides (`N`, `S`, `E`, `W`) and 4 corners (`NW`, `NE`, `SW`, `SE`) with live dimension tooltips to resize tables dynamically.
 - **🖥️ Full Screen View Mode**: Focus on distraction-free content writing with standard toolbar button toggle and <kbd>Esc</kbd> key shortcut support.
 - **🚀 Multi-Instance Ready**: Easily initialize single or multiple editor instances across textareas, inputs, or standard DOM elements using flexible query selectors.
 
