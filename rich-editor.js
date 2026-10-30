@@ -123,6 +123,7 @@ class RichEditorQ {
         }
         this._bindImageEvents();
         this._bindTableEvents();
+        this._bindClipboardSEO();
         this._bindChange();
         RichEditorQ.instances.push(this);
     }
@@ -285,6 +286,13 @@ class RichEditorQ {
 
         this.src = document.createElement('textarea');
         this.src.className = 're-source';
+        this.src.addEventListener('input', () => {
+            this.source.value = this.src.value;
+            this.source.dispatchEvent(new CustomEvent('richeditor:change', { detail: { html: this.src.value, el: this.source, editor: this } }));
+            if (typeof this.opts.onChange === 'function') {
+                this.opts.onChange(this.src.value, this.source, this);
+            }
+        });
         this.wrap.appendChild(this.src);
 
         this.status = document.createElement('div');
@@ -341,6 +349,24 @@ class RichEditorQ {
                 const html = clone.outerHTML;
                 const Delta = Quill.import('delta');
                 return new Delta().insert({ customTable: { html } });
+            });
+
+            // Prevent Quill from turning bullet list items inside <ol> into ordered numbers
+            this.quill.clipboard.addMatcher('OL', (node, delta) => {
+                const lis = Array.from(node.querySelectorAll('li'));
+                if (lis.some(li => li.getAttribute('data-list') === 'bullet')) {
+                    let liIdx = 0;
+                    delta.ops.forEach(op => {
+                        if (op.attributes && op.attributes.list) {
+                            const li = lis[liIdx];
+                            if (li && li.getAttribute('data-list') === 'bullet') {
+                                op.attributes.list = 'bullet';
+                            }
+                            liIdx++;
+                        }
+                    });
+                }
+                return delta;
             });
         }
 
@@ -1073,6 +1099,54 @@ class RichEditorQ {
         });
     }
 
+
+    _bindClipboardSEO() {
+        if (!this.quill || !this.quill.root) return;
+
+        const copyCutHandler = (e, isCut = false) => {
+            const activeTable = typeof this._getActiveTable === 'function' ? this._getActiveTable() : null;
+            if (activeTable && (activeTable.querySelector('.re-cell-selected') || activeTable.classList.contains('re-table-selected') || activeTable.querySelector('tr.re-row-selected'))) {
+                return;
+            }
+
+            const range = this.quill.getSelection();
+            if (!range || range.length === 0) return;
+
+            let selectedHtml = '';
+            try {
+                selectedHtml = this.quill.getSemanticHTML(range.index, range.length);
+            } catch (err) {}
+
+            if (!selectedHtml) {
+                const sel = window.getSelection();
+                if (sel && sel.rangeCount > 0) {
+                    const temp = document.createElement('div');
+                    temp.appendChild(sel.getRangeAt(0).cloneContents());
+                    selectedHtml = temp.innerHTML;
+                }
+            }
+
+            if (selectedHtml) {
+                const cleanHtml = RichEditorQ.cleanSEOHTML(selectedHtml, this.opts);
+                const text = this.quill.getText(range.index, range.length);
+
+                if (e.clipboardData) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.clipboardData.setData('text/html', cleanHtml);
+                    e.clipboardData.setData('text/plain', text);
+
+                    if (isCut) {
+                        this.quill.deleteText(range.index, range.length, 'user');
+                        this._onChange();
+                    }
+                }
+            }
+        };
+
+        this.quill.root.addEventListener('copy', e => copyCutHandler(e, false), true);
+        this.quill.root.addEventListener('cut', e => copyCutHandler(e, true), true);
+    }
 
     openInsertImageDialog() {
         const hasCustomUpload = typeof this.opts.onImageUpload === 'function' || !!this.opts.imageUploadUrl;
@@ -2413,6 +2487,7 @@ class RichEditorQ {
             ).join('\n');
         }
 
+        htmlContent = RichEditorQ.cleanSEOHTML(htmlContent, this.opts);
         RichEditorQ.copiedTableHtml = htmlContent;
         RichEditorQ.copiedTableText = textContent;
 
@@ -2641,7 +2716,7 @@ class RichEditorQ {
         const inSource = this.wrap.classList.contains('source-mode');
         const srcBtn = this.toolbarEl ? this.toolbarEl.querySelector('[data-act="source"]') : null;
         if (!inSource) {
-            this.src.value = this.getHTML();
+            this.src.value = RichEditorQ.formatHTML(this.getHTML());
             this.wrap.classList.add('source-mode');
             if (srcBtn) srcBtn.classList.add('ql-active');
             setTimeout(() => this.src.focus(), 50);
@@ -2663,10 +2738,10 @@ class RichEditorQ {
         let html = '';
         if (!isEmpty) {
             const rawHtml = this.quill.root.innerHTML;
-            html = this.opts.useInlineStyles !== false ? RichEditorQ.convertClassesToInlineCSS(rawHtml) : rawHtml;
+            html = RichEditorQ.cleanSEOHTML(rawHtml, this.opts);
         }
         this.source.value = html;
-        if (this.src) this.src.value = html;
+        if (this.src && !this.wrap.classList.contains('source-mode')) this.src.value = html;
         this._updateCount();
         this.source.dispatchEvent(new CustomEvent('richeditor:change', { detail: { html, el: this.source, editor: this } }));
         if (typeof this.opts.onChange === 'function') {
@@ -2757,7 +2832,7 @@ class RichEditorQ {
         const isEmpty = !hasMediaOrTable && !hasEmbeds && (this.quill.getText() || '').trim().length === 0;
         if (isEmpty) return '';
         const rawHtml = this.quill.root.innerHTML;
-        return this.opts.useInlineStyles !== false ? RichEditorQ.convertClassesToInlineCSS(rawHtml) : rawHtml;
+        return RichEditorQ.cleanSEOHTML(rawHtml, this.opts);
     }
 
     setHTML(html) {
@@ -2898,6 +2973,139 @@ class RichEditorQ {
 
     static toggleTheme() {
         RichEditorQ.instances.forEach(inst => inst.toggleTheme());
+    }
+
+    /**
+     * cleanSEOHTML - Converts Quill raw innerHTML to semantic SEO-friendly HTML.
+     * Transforms flat <ol data-list="bullet|ordered|checked"> into <ul>/<ol>/<li>.
+     */
+    static cleanSEOHTML(html, opts = {}) {
+        if (!html) return '';
+        let processedHtml = opts.useInlineStyles !== false
+            ? RichEditorQ.convertClassesToInlineCSS(html)
+            : html;
+
+        const temp = document.createElement('div');
+        temp.innerHTML = processedHtml;
+
+        // Remove editor-only UI artifacts
+        temp.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
+        temp.querySelectorAll('.re-row-selector-btn, .re-table-resizer-overlay').forEach(el => el.remove());
+        temp.querySelectorAll('.re-table-selected, .re-cell-selected, .re-row-selected').forEach(el => {
+            el.classList.remove('re-table-selected', 're-cell-selected', 're-row-selected');
+        });
+        // Remove Quill pseudo-content UI spans (bullet/number markers inserted by CSS)
+        temp.querySelectorAll('.ql-ui').forEach(el => el.remove());
+
+        // Convert Quill flat <ol data-list="..."> into proper semantic <ul>/<ol>
+        Array.from(temp.querySelectorAll('ol')).forEach(ol => {
+            const lis = Array.from(ol.children).filter(el => el.tagName === 'LI');
+            if (!lis.length) return;
+            if (!lis.some(li => li.hasAttribute('data-list'))) return; // real <ol>, leave alone
+            const fragment = RichEditorQ._buildSemanticList(lis);
+            ol.replaceWith(fragment);
+        });
+
+        // Remove residual ql- classes from list items
+        temp.querySelectorAll('li[class]').forEach(li => {
+            const cleaned = li.className.split(' ').filter(cls => !cls.startsWith('ql-')).join(' ').trim();
+            if (cleaned) li.className = cleaned;
+            else li.removeAttribute('class');
+        });
+
+        return temp.innerHTML;
+    }
+
+    static _buildSemanticList(lis) {
+        const frag = document.createDocumentFragment();
+        // stack entries: { indent, listTag, listEl, lastLi }
+        const stack = [];
+
+        for (const li of lis) {
+            const rawType = li.getAttribute('data-list') || 'bullet';
+            const isOrdered   = rawType === 'ordered';
+            const isChecked   = rawType === 'checked';
+            const isUnchecked = rawType === 'unchecked';
+            const listTag = isOrdered ? 'ol' : 'ul';
+
+            let indent = 0;
+            const m = (li.className || '').match(/ql-indent-(d+)/);
+            if (m) indent = parseInt(m[1], 10);
+
+            li.removeAttribute('data-list');
+            if (m) li.classList.remove(m[0]); // remove indent class; nesting handles depth
+
+            // Prepend checkbox for checklist items
+            if (isChecked || isUnchecked) {
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.disabled = true;
+                if (isChecked) cb.checked = true;
+                li.insertBefore(document.createTextNode(' '), li.firstChild);
+                li.insertBefore(cb, li.firstChild);
+            }
+
+            // Pop stack entries deeper than current indent
+            while (stack.length > 0 && stack[stack.length - 1].indent > indent) stack.pop();
+
+            // Pop if same indent but different list type (ul vs ol switch)
+            if (stack.length > 0 &&
+                stack[stack.length - 1].indent === indent &&
+                stack[stack.length - 1].listTag !== listTag) {
+                stack.pop();
+            }
+
+            // Create a new list container if needed
+            if (stack.length === 0 || stack[stack.length - 1].indent < indent) {
+                const newList = document.createElement(listTag);
+                if (isChecked || isUnchecked) newList.classList.add('re-checklist');
+                if (stack.length === 0) {
+                    frag.appendChild(newList);
+                } else {
+                    const parentEntry = stack[stack.length - 1];
+                    const parentLi = parentEntry.lastLi || parentEntry.listEl.lastElementChild;
+                    if (parentLi) parentLi.appendChild(newList);
+                    else parentEntry.listEl.appendChild(newList);
+                }
+                stack.push({ indent, listTag, listEl: newList, lastLi: null });
+            }
+
+            const top = stack[stack.length - 1];
+            top.listEl.appendChild(li);
+            top.lastLi = li;
+        }
+
+        return frag;
+    }
+
+    static formatHTML(html) {
+        if (!html) return '';
+        const INDENT = '  ';
+        const BLOCK = /^(div|p|ul|ol|li|table|thead|tbody|tr|th|td|h[1-6]|blockquote|pre|figure|section|article|header|footer|nav|main|aside)$/i;
+        let result = '', depth = 0;
+        const tokens = html.match(/(<[^>]+>|[^<]+)/g) || [];
+        tokens.forEach(token => {
+            if (token.startsWith('</')) {
+                const tag = (token.match(/<\/(\w+)/) || [])[1] || '';
+                if (BLOCK.test(tag)) {
+                    depth = Math.max(0, depth - 1);
+                    result += '\n' + INDENT.repeat(depth) + token;
+                } else {
+                    result += token;
+                }
+            } else if (token.startsWith('<') && !/\/>$/.test(token)) {
+                const tag = (token.match(/<(\w+)/) || [])[1] || '';
+                if (BLOCK.test(tag)) {
+                    result += '\n' + INDENT.repeat(depth) + token;
+                    depth++;
+                } else {
+                    result += token;
+                }
+            } else {
+                result += token;
+            }
+        });
+        return result.trim();
     }
 
     static init(selector = '.rich-editor-q', options = {}) {
